@@ -2,12 +2,10 @@ package com.studiojms.batch;
 
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
-import org.springframework.batch.core.scope.context.ChunkContext;
-import org.springframework.batch.core.step.tasklet.Tasklet;
+import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
@@ -18,27 +16,82 @@ import org.springframework.context.annotation.Bean;
 @EnableBatchProcessing
 public class BatchApplication {
 
-	@Autowired
-	private JobBuilderFactory jobBuilderFactory;
+    @Autowired
+    private JobBuilderFactory jobBuilderFactory;
 
-	@Autowired
-	private StepBuilderFactory stepBuilderFactory;
+    @Autowired
+    private StepBuilderFactory stepBuilderFactory;
 
-	@Bean
-	public Job deliverPackageJob() {
-		return jobBuilderFactory.get("deliverPackageJob").start(packageItemStep()).build();
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(BatchApplication.class, args);
+    }
 
-	@Bean
-	public Step packageItemStep() {
-		return stepBuilderFactory.get("packageItem").tasklet((contribution, chunkContext) -> {
-			System.out.println("Item has been packaged");
-			return RepeatStatus.FINISHED;
-		}).build();
-	}
+    @Bean
+    public JobExecutionDecider decider() {
+        return new DeliveryDecider();
+    }
 
-	public static void main(String[] args) {
-		SpringApplication.run(BatchApplication.class, args);
-	}
+    @Bean
+    public Job deliverPackageJob() {
+        return jobBuilderFactory.get("deliverPackageJob")
+                .start(packageItemStep())
+                .next(driveToAddressStep())
+                    .on("FAILED").to(storePackageStep())
+                .from(driveToAddressStep())
+                    .on("*").to(decider())
+                        .on("PRESENT").to(givePackageToCustomerStep())
+                        .from(decider())
+                            .on("NOT_PRESENT").to(leavePackageAtDoorStep())
+                .end()
+                .build();
+    }
+
+    @Bean
+    public Step packageItemStep() {
+        return stepBuilderFactory.get("packageItem").tasklet((contribution, chunkContext) -> {
+            final String item = chunkContext.getStepContext().getJobParameters().get("item").toString();
+            final String date = chunkContext.getStepContext().getJobParameters().get("run.date").toString();
+
+            System.out.println(String.format("Item %s has been packaged on %s", item, date));
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step driveToAddressStep() {
+        boolean GOT_LOST = false;
+        return stepBuilderFactory.get("driveToAddressStep").tasklet((contribution, chunkContext) -> {
+            if (GOT_LOST) {
+                throw new RuntimeException("Got lost driving to the address");
+            }
+
+            System.out.println("Successfully arrived to address");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step storePackageStep() {
+        return stepBuilderFactory.get("storePackageStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Storing the package while the customer address isn't located");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step leavePackageAtDoorStep() {
+        return stepBuilderFactory.get("leavePackageAtDoorStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Leaving package at the door");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step givePackageToCustomerStep() {
+        return stepBuilderFactory.get("givePackageToCustomerStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Given the package to the customer");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
 
 }

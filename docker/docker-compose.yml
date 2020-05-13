@@ -1,0 +1,27 @@
+version: '3'
+
+services:
+  mysqlsrv:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: batch-db
+      MYSQL_USER: batch-user
+      MYSQL_PASSWORD: batch-pass
+    ports:
+      - 3306:3306
+    volumes:
+      - ./volumes/mysql:/var/lib/mysql
+    networks:
+      - mysql-network
+
+  adminer:
+    image: adminer
+    ports:
+      - 9090:8080
+    networks:
+      - mysql-network
+
+networks:
+  mysql-network:
+    driver: bridge

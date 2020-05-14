@@ -40,6 +40,10 @@ public class BatchApplication {
                 .from(driveToAddressStep())
                     .on("*").to(decider())
                         .on("PRESENT").to(givePackageToCustomerStep())
+                            .next(customerSatisfactionDecider())
+                                .on("CORRECT_ITEM").to(thankCustomerStep())
+                            .from(customerSatisfactionDecider())
+                                            .on("INCORRECT_ITEM").to(refundCustomerStep())
                         .from(decider())
                             .on("NOT_PRESENT").to(leavePackageAtDoorStep())
                 .end()
@@ -47,8 +51,29 @@ public class BatchApplication {
     }
 
     @Bean
+    public Step refundCustomerStep() {
+        return stepBuilderFactory.get("refundCustomerStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Customer was refund");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step thankCustomerStep() {
+        return stepBuilderFactory.get("thankCustomerStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Thanks for the item");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public JobExecutionDecider customerSatisfactionDecider() {
+        return new CustomerSatisfactionDecider();
+    }
+
+    @Bean
     public Step packageItemStep() {
-        return stepBuilderFactory.get("packageItem").tasklet((contribution, chunkContext) -> {
+        return stepBuilderFactory.get("packageItemStep").tasklet((contribution, chunkContext) -> {
             final String item = chunkContext.getStepContext().getJobParameters().get("item").toString();
             final String date = chunkContext.getStepContext().getJobParameters().get("run.date").toString();
 

@@ -14,21 +14,17 @@ import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.PagingQueryProvider;
+import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
 import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
-import org.springframework.batch.item.file.FlatFileItemWriter;
-import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
-import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
 import javax.sql.DataSource;
-import java.io.File;
 
 @SpringBootApplication
 @EnableBatchProcessing
@@ -60,22 +56,19 @@ public class BatchApplication {
 
     @Bean
     public ItemWriter<User> itemWriter() {
-        final FlatFileItemWriter<User> writer = new FlatFileItemWriter<>();
-        writer.setResource(new FileSystemResource("/tmp/data/users.csv"));
+        final String insertSql = "INSERT INTO users_output(username,login_email,identifier,first_name,last_name) VALUES (?,?,?,?,?)";
 
-        final DelimitedLineAggregator<User> aggregator = new DelimitedLineAggregator<>();
-        aggregator.setDelimiter(";");
-
-        String[] fieldNames = new String[]{ "username", "loginEmail", "identifier", "firstName", "lastName" };
-
-        final BeanWrapperFieldExtractor<User> fieldExtractor = new BeanWrapperFieldExtractor<>();
-        fieldExtractor.setNames(fieldNames);
-
-        aggregator.setFieldExtractor(fieldExtractor);
-
-        writer.setLineAggregator(aggregator);
-
-        return writer;
+        return new JdbcBatchItemWriterBuilder<User>()
+                .dataSource(datasource)
+                .sql(insertSql)
+                .itemPreparedStatementSetter((item, ps) -> {
+                    ps.setString(1, item.getUsername());
+                    ps.setString(2, item.getLoginEmail());
+                    ps.setString(3, item.getIdentifier());
+                    ps.setString(4, item.getFirstName());
+                    ps.setString(5, item.getLastName());
+                })
+                .build();
     }
 
     @Bean

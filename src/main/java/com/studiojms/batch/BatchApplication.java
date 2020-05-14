@@ -12,7 +12,9 @@ import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.item.ItemReader;
-import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
+import org.springframework.batch.item.database.PagingQueryProvider;
+import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
+import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
@@ -40,11 +42,11 @@ public class BatchApplication {
     }
 
     @Bean
-    public Job job() {
+    public Job job() throws Exception {
         return jobBuilderFactory.get("job").start(chunkBasedStep()).build();
     }
 
-    private Step chunkBasedStep() {
+    private Step chunkBasedStep() throws Exception {
         return stepBuilderFactory.get("chunkBasedStep").<User, User>chunk(3)
                 .reader(itemReader())
                 .writer(items -> {
@@ -54,15 +56,25 @@ public class BatchApplication {
     }
 
     @Bean
-    public ItemReader<User> itemReader() {
-        final String query = "SELECT * FROM users ORDER BY username";
-
-        return new JdbcCursorItemReaderBuilder<User>()
+    public ItemReader<User> itemReader() throws Exception {
+        return new JdbcPagingItemReaderBuilder<User>()
                 .dataSource(datasource)
                 .name("jdbcCursorItemReader")
-                .sql(query)
+                .queryProvider(queryProvider())
                 .rowMapper(new UsersRowMapper())
+                .pageSize(3)
                 .build();
+    }
+
+    @Bean
+    public PagingQueryProvider queryProvider() throws Exception {
+        final SqlPagingQueryProviderFactoryBean providerFactoryBean = new SqlPagingQueryProviderFactoryBean();
+        providerFactoryBean.setSelectClause("SELECT *");
+        providerFactoryBean.setFromClause("FROM users");
+        providerFactoryBean.setSortKey("username");
+        providerFactoryBean.setDataSource(datasource);
+
+        return providerFactoryBean.getObject();
     }
 
     @Bean

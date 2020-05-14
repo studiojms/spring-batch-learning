@@ -1,5 +1,6 @@
 package com.studiojms.batch;
 
+import com.studiojms.batch.model.User;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.StepExecutionListener;
@@ -10,12 +11,20 @@ import org.springframework.batch.core.job.builder.FlowBuilder;
 import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.batch.item.file.mapping.DefaultLineMapper;
+import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
+
+import java.io.File;
 
 @SpringBootApplication
 @EnableBatchProcessing
@@ -29,6 +38,41 @@ public class BatchApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(BatchApplication.class, args);
+    }
+
+    @Bean
+    public Job job() {
+        return jobBuilderFactory.get("job").start(chunkBasedStep()).build();
+    }
+
+    private Step chunkBasedStep() {
+        return stepBuilderFactory.get("chunkBasedStep").<User, User>chunk(3)
+                .reader(itemReader())
+                .writer(items -> {
+                    System.out.println(String.format("Received a list of size %s", items.size()));
+                    items.forEach(System.out::println);
+                }).build();
+    }
+
+    @Bean
+    public ItemReader<User> itemReader() {
+        final String[] tokens = {"Username", "Login email", "Identifier", "First name", "Last name"};
+
+
+        final FlatFileItemReader<User> reader = new FlatFileItemReader<>();
+        reader.setLinesToSkip(1);
+        reader.setResource(new ClassPathResource("username-or-email.csv"));
+
+        final DefaultLineMapper<User> lineMapper = new DefaultLineMapper<>();
+        final DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer(";");
+        tokenizer.setNames(tokens);
+
+        lineMapper.setLineTokenizer(tokenizer);
+        lineMapper.setFieldSetMapper(new UserFieldSetMapper());
+
+        reader.setLineMapper(lineMapper);
+
+        return reader;
     }
 
     @Bean

@@ -12,19 +12,15 @@ import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.item.ItemReader;
-import org.springframework.batch.item.file.FlatFileItemReader;
-import org.springframework.batch.item.file.mapping.DefaultLineMapper;
-import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
+import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
-import java.io.File;
+import javax.sql.DataSource;
 
 @SpringBootApplication
 @EnableBatchProcessing
@@ -35,6 +31,9 @@ public class BatchApplication {
 
     @Autowired
     private StepBuilderFactory stepBuilderFactory;
+
+    @Autowired
+    private DataSource datasource;
 
     public static void main(String[] args) {
         SpringApplication.run(BatchApplication.class, args);
@@ -56,23 +55,14 @@ public class BatchApplication {
 
     @Bean
     public ItemReader<User> itemReader() {
-        final String[] tokens = {"Username", "Login email", "Identifier", "First name", "Last name"};
+        final String query = "SELECT * FROM users ORDER BY username";
 
-
-        final FlatFileItemReader<User> reader = new FlatFileItemReader<>();
-        reader.setLinesToSkip(1);
-        reader.setResource(new ClassPathResource("username-or-email.csv"));
-
-        final DefaultLineMapper<User> lineMapper = new DefaultLineMapper<>();
-        final DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer(";");
-        tokenizer.setNames(tokens);
-
-        lineMapper.setLineTokenizer(tokenizer);
-        lineMapper.setFieldSetMapper(new UserFieldSetMapper());
-
-        reader.setLineMapper(lineMapper);
-
-        return reader;
+        return new JdbcCursorItemReaderBuilder<User>()
+                .dataSource(datasource)
+                .name("jdbcCursorItemReader")
+                .sql(query)
+                .rowMapper(new UsersRowMapper())
+                .build();
     }
 
     @Bean

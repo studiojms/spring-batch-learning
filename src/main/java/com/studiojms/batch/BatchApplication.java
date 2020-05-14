@@ -12,17 +12,23 @@ import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.PagingQueryProvider;
 import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.file.FlatFileItemWriter;
+import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
+import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
 import javax.sql.DataSource;
+import java.io.File;
 
 @SpringBootApplication
 @EnableBatchProcessing
@@ -49,10 +55,27 @@ public class BatchApplication {
     private Step chunkBasedStep() throws Exception {
         return stepBuilderFactory.get("chunkBasedStep").<User, User>chunk(3)
                 .reader(itemReader())
-                .writer(items -> {
-                    System.out.println(String.format("Received a list of size %s", items.size()));
-                    items.forEach(System.out::println);
-                }).build();
+                .writer(itemWriter()).build();
+    }
+
+    @Bean
+    public ItemWriter<User> itemWriter() {
+        final FlatFileItemWriter<User> writer = new FlatFileItemWriter<>();
+        writer.setResource(new FileSystemResource("/tmp/data/users.csv"));
+
+        final DelimitedLineAggregator<User> aggregator = new DelimitedLineAggregator<>();
+        aggregator.setDelimiter(";");
+
+        String[] fieldNames = new String[]{ "username", "loginEmail", "identifier", "firstName", "lastName" };
+
+        final BeanWrapperFieldExtractor<User> fieldExtractor = new BeanWrapperFieldExtractor<>();
+        fieldExtractor.setNames(fieldNames);
+
+        aggregator.setFieldExtractor(fieldExtractor);
+
+        writer.setLineAggregator(aggregator);
+
+        return writer;
     }
 
     @Bean

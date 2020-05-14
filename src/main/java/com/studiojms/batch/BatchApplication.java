@@ -2,15 +2,20 @@ package com.studiojms.batch;
 
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.job.builder.FlowBuilder;
+import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.job.flow.JobExecutionDecider;
+import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
 @SpringBootApplication
 @EnableBatchProcessing
@@ -35,18 +40,28 @@ public class BatchApplication {
     public Job deliverPackageJob() {
         return jobBuilderFactory.get("deliverPackageJob")
                 .start(packageItemStep())
-                .next(driveToAddressStep())
-                    .on("FAILED").to(storePackageStep())
+//                .on("*").to(deliveryFlow())
+//                .next(nestedBillingJobStep())
+                .split(new SimpleAsyncTaskExecutor())
+                .add(deliveryFlow(), billingFlow())
+                .end()
+                .build();
+    }
+
+    @Bean
+    public Flow deliveryFlow() {
+        return new FlowBuilder<SimpleFlow>("deliveryFlow")
+                .start(driveToAddressStep())
+                    .on("FAILED").fail()
                 .from(driveToAddressStep())
                     .on("*").to(decider())
                         .on("PRESENT").to(givePackageToCustomerStep())
                             .next(customerSatisfactionDecider())
                                 .on("CORRECT_ITEM").to(thankCustomerStep())
                             .from(customerSatisfactionDecider())
-                                            .on("INCORRECT_ITEM").to(refundCustomerStep())
-                        .from(decider())
-                            .on("NOT_PRESENT").to(leavePackageAtDoorStep())
-                .end()
+                                .on("INCORRECT_ITEM").to(refundCustomerStep())
+                    .from(decider())
+                        .on("NOT_PRESENT").to(leavePackageAtDoorStep())
                 .build();
     }
 
@@ -117,6 +132,76 @@ public class BatchApplication {
             System.out.println("Given the package to the customer");
             return RepeatStatus.FINISHED;
         }).build();
+    }
+
+    @Bean
+    public Job prepareFlowersJob() {
+        return jobBuilderFactory.get("prepareFlowersJob")
+                .start(selectFlowersStep())
+                    .on("TRIM_REQUIRED").to(removeThornsStep()).next(arrangeFlowersStep())
+                .from(selectFlowersStep())
+                    .on("NO_TRIM_REQUIRED").to(arrangeFlowersStep())
+                .from(arrangeFlowersStep()).on("*").to(deliveryFlow())
+                .end()
+                .build();
+    }
+
+    @Bean
+    public StepExecutionListener selectFlowerListener() {
+        return new FlowersSelectionStepExecutionListener();
+    }
+
+    @Bean
+    public Step selectFlowersStep() {
+        return stepBuilderFactory.get("selectFlowersStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Selecting flowers");
+            return RepeatStatus.FINISHED;
+        })
+        .listener(selectFlowerListener())
+        .build();
+    }
+
+    @Bean
+    public Step removeThornsStep() {
+        return stepBuilderFactory.get("removeThornsStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Removing thorns from flowers");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step arrangeFlowersStep() {
+        return stepBuilderFactory.get("arrangeFlowersStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Arranging flowers for order");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Step nestedBillingJobStep() {
+        return stepBuilderFactory.get("nestedBillingJobStep").job(billingJob()).build();
+    }
+
+    @Bean
+    public Step sendInvoiceStep() {
+        return stepBuilderFactory.get("sendInvoiceStep").tasklet((contribution, chunkContext) -> {
+            System.out.println("Invoice is sent to the customer");
+            return RepeatStatus.FINISHED;
+        }).build();
+    }
+
+    @Bean
+    public Job billingJob() {
+        return jobBuilderFactory.get("billingJob")
+                .start(sendInvoiceStep())
+                .build();
+    }
+
+    @Bean
+    public Flow billingFlow() {
+        return new FlowBuilder<SimpleFlow>("billingFlow")
+                .start(sendInvoiceStep())
+                .build();
     }
 
 }
